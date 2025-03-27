@@ -91,7 +91,7 @@ asterisk -rx "dialplan reload"
 
 Login to MySQL:
 
-```bash
+```
 mysql -u root -p asterisk
 ```
 
