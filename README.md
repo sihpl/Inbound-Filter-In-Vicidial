@@ -98,14 +98,15 @@ mysql -u root -p asterisk
 Run the SQL command:
 
 ```sql
-CREATE TABLE cli_call_limits (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  caller_id VARCHAR(20),
-  call_date DATE,
-  call_count INT DEFAULT 1,
-  UNIQUE KEY (caller_id, call_date)
+CREATE TABLE cli_call_logs_all (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    caller_id VARCHAR(20),
+    call_date DATE,
+    call_time DATETIME,
+    call_status ENUM('ALLOWED', 'BLOCKED_WHITELIST', 'BLOCKED_LIMIT') NOT NULL,
+    lead_id INT DEFAULT NULL
 );
-```
+
 
 ---
 
@@ -120,7 +121,7 @@ crontab -e
 Add this line:
 
 ```bash
-0 0 * * * mysql -u root asterisk -e "DELETE FROM cli_call_limits WHERE call_date < CURDATE();"
+0 1 * * * mysql -u root -p'your_mysql_password' asterisk -e "DELETE FROM cli_call_logs_all WHERE call_date < CURDATE() - INTERVAL 30 DAY;"
 ```
 
 > 📉 This clears previous day’s call records automatically.
