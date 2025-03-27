@@ -1,53 +1,80 @@
 #!/usr/bin/php -q
 <?php
-file_put_contents("/tmp/whitelist.log", "AGI called with: " . implode(" ", $argv) . "\n", FILE_APPEND);
+error_reporting(E_ALL);
+set_time_limit(30);
+ob_implicit_flush(false);
 
-$callerid_raw = $argv[1] ?? '';
-$callerid = preg_replace('/\D/', '', $callerid_raw); // Remove non-digits
-$callerid = substr($callerid, -10); // Keep last 10 digits
-$today = date('Y-m-d');
-$limit = 5;
+$log_file = "/tmp/whitelist.log";
 
-$mysqli = new mysqli("localhost", "root", "", "asterisk");
-if ($mysqli->connect_error) {
-    file_put_contents("/tmp/whitelist.log", "STEP 1: DB connection failed\n", FILE_APPEND);
-    echo "EXEC VoiceMail(1001@default,u)\n";
-    echo "EXEC Hangup\n";
-    exit(1);
+// Get CLI argument
+$argv = $_SERVER['argv'];
+$caller_id_raw = isset($argv[1]) ? $argv[1] : '';
+$caller_id = preg_replace('/[^0-9]/', '', $caller_id_raw);
+
+// Reject if CLI is not valid (empty or too short)
+if (empty($caller_id) || strlen($caller_id) < 7) {
+    echo "EXEC Wait 1\n";
+    echo "HANGUP\n";
+    exit;
 }
 
-// STEP 2: Check if caller is in vicidial_list
-$res = $mysqli->query("SELECT lead_id FROM vicidial_list WHERE phone_number = '$callerid' LIMIT 1");
-if (!$res || !$res->num_rows) {
-    file_put_contents("/tmp/whitelist.log", "STEP 2: BLOCKED - Not in whitelist\n", FILE_APPEND);
-    echo "EXEC VoiceMail(1001@default,u)\n";
-    echo "EXEC Hangup\n";
-    exit(1);
+file_put_contents($log_file, "[" . date("Y-m-d H:i:s") . "] === START ===\n", FILE_APPEND);
+file_put_contents($log_file, "[" . date("Y-m-d H:i:s") . "] CLI: $caller_id\n", FILE_APPEND);
+
+// DB connection
+$conn = mysqli_connect("localhost", "root", "", "asterisk");
+if (!$conn) {
+    echo "EXEC Wait 1\n";
+    echo "HANGUP\n";
+    exit;
 }
 
-$row = $res->fetch_assoc();
+// Date/time
+$date = date("Y-m-d");
+$time = date("Y-m-d H:i:s");
+
+// Check if CLI is whitelisted
+$res = mysqli_query($conn, "SELECT lead_id FROM vicidial_list WHERE phone_number = '$caller_id' LIMIT 1");
+if (!$res || mysqli_num_rows($res) == 0) {
+    mysqli_query($conn, "INSERT INTO cli_call_logs_all (caller_id, call_date, call_time, call_status) VALUES ('$caller_id', '$date', '$time', 'BLOCKED_WHITELIST')");
+    file_put_contents($log_file, "[" . date("Y-m-d H:i:s") . "] BLOCKED - Not in whitelist\n", FILE_APPEND);
+    echo "EXEC Wait 1\n";
+    echo "HANGUP\n";
+    exit;
+}
+
+// Get lead ID
+$row = mysqli_fetch_assoc($res);
 $lead_id = $row['lead_id'];
-file_put_contents("/tmp/whitelist.log", "STEP 2: VALID - Lead ID $lead_id\n", FILE_APPEND);
 
-// STEP 3: Check if daily limit is reached
-$res = $mysqli->query("SELECT call_count FROM cli_call_limits WHERE caller_id = '$callerid' AND call_date = '$today'");
-if ($res && $row = $res->fetch_assoc()) {
-    if ($row['call_count'] >= $limit) {
-        file_put_contents("/tmp/whitelist.log", "STEP 3: BLOCKED - Limit reached ({$row['call_count']})\n", FILE_APPEND);
-        echo "EXEC VoiceMail(1001@default,u)\n";
-        echo "EXEC Hangup\n";
-        exit(1);
-    } else {
-        $mysqli->query("UPDATE cli_call_limits SET call_count = call_count + 1 WHERE caller_id = '$callerid' AND call_date = '$today'");
-        file_put_contents("/tmp/whitelist.log", "STEP 3: ALLOWED - Incremented\n", FILE_APPEND);
-    }
-} else {
-    $mysqli->query("INSERT INTO cli_call_limits (caller_id, call_date, call_count) VALUES ('$callerid', '$today', 1)");
-    file_put_contents("/tmp/whitelist.log", "STEP 3: ALLOWED - First call today\n", FILE_APPEND);
+// Limit check (max 5 per day)
+$max_calls = 5;
+$chk = mysqli_query($conn, "SELECT call_count FROM cli_call_limits WHERE caller_id = '$caller_id' AND call_date = '$date'");
+$call_limit = 0;
+if ($chk && mysqli_num_rows($chk) > 0) {
+    $limit_row = mysqli_fetch_assoc($chk);
+    $call_limit = (int)$limit_row['call_count'];
 }
 
-// If all checks passed, allow the call to proceed normally
-file_put_contents("/tmp/whitelist.log", "STEP 4: PASSED - Allow call to route\n", FILE_APPEND);
-$mysqli->close();
-exit(0);
+// If limit reached
+if ($call_limit >= $max_calls) {
+    mysqli_query($conn, "INSERT INTO cli_call_logs_all (caller_id, call_date, call_time, call_status, lead_id) VALUES ('$caller_id', '$date', '$time', 'BLOCKED_LIMIT', '$lead_id')");
+    file_put_contents($log_file, "[" . date("Y-m-d H:i:s") . "] BLOCKED - Limit reached\n", FILE_APPEND);
+    echo "EXEC Wait 1\n";
+    echo "HANGUP\n";
+    exit;
+}
+
+// Allow and update count
+if ($call_limit == 0) {
+    mysqli_query($conn, "INSERT INTO cli_call_limits (caller_id, call_date, call_count) VALUES ('$caller_id', '$date', 1)");
+} else {
+    mysqli_query($conn, "UPDATE cli_call_limits SET call_count = call_count + 1 WHERE caller_id = '$caller_id' AND call_date = '$date'");
+}
+
+mysqli_query($conn, "INSERT INTO cli_call_logs_all (caller_id, call_date, call_time, call_status, lead_id) VALUES ('$caller_id', '$date', '$time', 'ALLOWED', '$lead_id')");
+file_put_contents($log_file, "[" . date("Y-m-d H:i:s") . "] ALLOWED - Lead ID: $lead_id\n", FILE_APPEND);
+
+echo "EXEC Wait 1\n";
+exit;
 ?>
