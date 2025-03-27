@@ -106,9 +106,7 @@ CREATE TABLE cli_call_logs_all (
     call_status ENUM('ALLOWED', 'BLOCKED_WHITELIST', 'BLOCKED_LIMIT') NOT NULL,
     lead_id INT DEFAULT NULL
 );
-
-
----
+'''
 
 ## 🪜 Step 7: Auto-Reset Call Count Daily
 
