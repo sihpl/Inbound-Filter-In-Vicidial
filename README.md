@@ -8,12 +8,12 @@ Whitelist-based AGI script to filter inbound calls in VICIdial using PHP and MyS
 
 ## 🧠 Features
 
-✅ Blocks inbound calls not on your whitelist  
-✅ Tracks call counts per Caller ID (daily)  
-✅ Limits each CLI to **5 calls per day**  
-✅ Fully PHP-based AGI implementation  
-✅ Easy integration via `extensions.conf`  
-✅ Clean logging with lead tracking
+- ✅ Blocks inbound calls not on your whitelist  
+- ✅ Tracks call counts per Caller ID (daily)  
+- ✅ Limits each CLI to **5 calls per day**  
+- ✅ Fully PHP-based AGI implementation  
+- ✅ Easy integration via `extensions.conf`  
+- ✅ Clean logging with lead tracking
 
 ---
 
@@ -27,7 +27,7 @@ Whitelist-based AGI script to filter inbound calls in VICIdial using PHP and MyS
 
 ---
 
-## 🛠️ Installation Steps
+## 💪 Installation Steps
 
 ### 🔧 Step 1: Update Dialplan
 
@@ -51,7 +51,6 @@ exten => _X.,n,Hangup()
 ---
 
 ### 📁 Step 2: Create AGI Scripts Directory
-
 ```bash
 cd /usr/src/
 mkdir agi-scripts
@@ -59,8 +58,7 @@ mkdir agi-scripts
 
 ---
 
-### 👅 Step 3: Download AGI Scripts
-
+### 👥 Step 3: Download AGI Scripts
 ```bash
 cd /usr/src/agi-scripts
 
@@ -72,7 +70,6 @@ wget https://raw.githubusercontent.com/sihpl/Inbound-Filter-In-Vicidial/main/agi
 ---
 
 ### 🔐 Step 4: Set Permissions
-
 ```bash
 chmod -R 755 /usr/src/agi-scripts/*.php
 ```
@@ -80,7 +77,6 @@ chmod -R 755 /usr/src/agi-scripts/*.php
 ---
 
 ### 🔄 Step 5: Reload Dialplan
-
 ```bash
 asterisk -rx "dialplan reload"
 ```
@@ -90,13 +86,11 @@ asterisk -rx "dialplan reload"
 ## 🗃️ Step 6: Create Call Count Table
 
 Login to MySQL:
-
-```
+```bash
 mysql -u root -p asterisk
 ```
 
 Run the SQL command:
-
 ```sql
 CREATE TABLE cli_call_logs_all (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -106,23 +100,27 @@ CREATE TABLE cli_call_logs_all (
     call_status ENUM('ALLOWED', 'BLOCKED_WHITELIST', 'BLOCKED_LIMIT') NOT NULL,
     lead_id INT DEFAULT NULL
 );
-'''
+```
 
-## 🪜 Step 7: Auto-Reset Call Count Daily
+---
 
-Edit crontab:
+## 🧼 Step 7: Auto-Reset Call Count Daily
 
+### 🔧 Edit crontab
 ```bash
 crontab -e
 ```
 
-Add this line:
+### 📌 Add this line to delete previous day's call limits:
+```bash
+0 1 * * * mysql -u root -p'your_mysql_password' asterisk -e "DELETE FROM cli_call_limits WHERE call_date < CURDATE();"
+```
+💡 This clears previous day's call limits to reset the CLI call counter daily at **1:00 AM**.
 
+### 📌 (Optional) Clean older call logs after 30 days:
 ```bash
 0 1 * * * mysql -u root -p'your_mysql_password' asterisk -e "DELETE FROM cli_call_logs_all WHERE call_date < CURDATE() - INTERVAL 30 DAY;"
 ```
-
-> 📉 This clears previous day’s call records automatically.
 
 ---
 
