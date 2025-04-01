@@ -149,6 +149,23 @@ Add the following lines to reset call limits and clean up old logs **daily at 1:
 -- Check all calls today
 SELECT * FROM cli_call_logs_all WHERE call_date = CURDATE();
 
+--Check Call Status And Call Count
+SELECT 
+    l.caller_id,
+    l.call_count,
+    COALESCE(s.call_status, 'UNKNOWN') AS latest_status
+FROM 
+    cli_call_limits l
+LEFT JOIN (
+    SELECT caller_id, call_status
+    FROM cli_call_logs_all
+    WHERE call_date = CURDATE()
+    ORDER BY call_time DESC
+) s ON l.caller_id = s.caller_id
+WHERE l.call_date = CURDATE()
+GROUP BY l.caller_id;
+
+
 -- Check how many times a caller has called today
 SELECT * FROM cli_call_limits WHERE caller_id = '1234567890' AND call_date = CURDATE();
 ```
